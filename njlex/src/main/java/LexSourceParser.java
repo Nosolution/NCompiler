@@ -5,6 +5,7 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Parse .l file
@@ -21,13 +22,25 @@ public class LexSourceParser {
     private LexSourceParser() {
     }
 
-    public boolean parse(String path, Map<String, String> terms, List<Rule> rules, List<String> defs, List<String> subroutines) {
+    /**
+     * Parse given .l file
+     *
+     * @param path        path of .l file
+     * @param terms       location to store user-defined regex terms
+     * @param rules       location to store regex rules including actions
+     * @param defs        definitions that will be copied into generated codes
+     * @param subroutines user provide subroutines that will be used in actions
+     * @return True if parse successfully, otherwise false
+     */
+    public boolean parse(String path, TreeMap<String, String> terms, List<Rule> rules, List<String> defs, List<String> subroutines) {
         State st = State.start;
         String line;
         int lineCount = 0;
         boolean error = false;
-        int brace_nest = 0;
-        BufferedReader in = null;
+        boolean inBracket = false;
+        boolean multi_actions = false;
+        boolean inMark = false;
+        BufferedReader in;
         try {
             in = new BufferedReader(new FileReader(path));
         } catch (IOException e) {
@@ -62,55 +75,73 @@ public class LexSourceParser {
                             st = State.rule;
                         else {
                             String[] term_pair = line.split(" ");
+                            if (term_pair.length == 1) {
+                                term_pair = term_pair[0].split("\t");
+
+                            }
                             if (term_pair.length != 2)
                                 error = true;
-                            else
+                            else {
+                                for (int i = 0; i < term_pair[0].length(); i++) {
+                                    if (!Character.isAlphabetic(term_pair[0].charAt(i))) {
+                                        error = true;
+                                        break;
+                                    }
+                                }
                                 terms.put(term_pair[0], term_pair[1]);
+                            }
                         }
                         break;
                     case rule:
                         if (line.equals("%%"))
                             st = State.subroutine;
                         else {
-                            if (line.startsWith(" ") || line.startsWith("\t")) {
-                                if (line.contains("}")){
-                                    brace_nest--;
-                                    if(brace_nest == 0)
-                                        continue;
+                            line = line.trim();
+                            if (multi_actions) {
+                                if (line.equals("}")) {
+                                    multi_actions = false;
+                                } else {
+                                    Rule last = rules.get(rules.size() - 1);
+                                    last.setAction(last.getAction() + line + "\n");
                                 }
-                                else if(line.contains("{"))
-                                    brace_nest++;
-
-                                Rule last = rules.get(rules.size() - 1);
-                                last.setAction(last.getAction() + line + "\n");
                             } else {
                                 Rule rule = new Rule();
-                                String[] rule_action = line.split(" ");
-                                rule.setPattern(rule_action[0]);
-                                if (!rule_action[1].equals("{"))
-                                    rule.setAction(rule_action[1] + "\n");
-                                else
-                                    brace_nest++;
+                                StringBuilder pattern = new StringBuilder("");
+                                int i = 0;
+                                for (; i < line.length(); i++) {
+                                    if (!inBracket) {
+                                        if (line.charAt(i) == '[' && (i == 0 || line.charAt(i) != '\\'))
+                                            inBracket = true;
+                                    } else {
+                                        if (line.charAt(i) == ']')
+                                            inBracket = false;
+                                    }
+                                    if (line.charAt(i) == '\"' && (i == 0 || line.charAt(i) != '\\'))
+                                        inMark = !inMark;
+                                    if (!inBracket && !inMark && (line.charAt(i) == ' ' || line.charAt(i) == '\t'))
+                                        break;
+                                    pattern.append(line.charAt(i));
+                                }
+                                rule.setPattern(pattern.toString());
+
+                                String action = line.substring(i).trim();
+                                if (!action.equals("{")) {
+                                    rule.setAction(action + "\n");
+                                } else
+                                    multi_actions = true;
                             }
                         }
                     case subroutine:
                         subroutines.add(line);
-
                 }
-
-
             }
         } catch (IOException e) {
             e.printStackTrace();
             return false;
         }
 
-        if (lineCount == 0 || error)
-            return false;
-
-
-
-        return true;
+        //.l file　must have a least one line which is "%%"
+        return lineCount != 0 && !error;
 
     }
 }
