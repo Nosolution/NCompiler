@@ -1,10 +1,11 @@
-import entity.Rule;
+package lex;
+
+import lex.entity.Rule;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.List;
-import java.util.Map;
 import java.util.TreeMap;
 
 /**
@@ -32,7 +33,7 @@ public class LexSourceParser {
      * @param subroutines user provide subroutines that will be used in actions
      * @return True if parse successfully, otherwise false
      */
-    public boolean parse(String path, TreeMap<String, String> terms, List<Rule> rules, List<String> defs, List<String> subroutines) {
+    public static boolean parse(String path, TreeMap<String, String> terms, List<Rule> rules, List<String> defs, List<String> subroutines) {
         State st = State.start;
         String line;
         int lineCount = 0;

@@ -1,4 +1,4 @@
-package entity;
+package lex.entity;
 
 import lombok.Data;
 
