@@ -10,6 +10,11 @@ package lex.fa;
 public class NFANodeFactory {
     private static int cnt = 0;
 
+    /**
+     * Produce new {@link NFANode}, left user free to manage state number
+     *
+     * @return new NFANode with no concern of conflicts of same state number
+     */
     public static NFANode produceNode() {
         return new NFANode(cnt++);
     }

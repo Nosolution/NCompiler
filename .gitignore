@@ -1,2 +1,7 @@
 /**/.idea
 /**/*.iml
+/**/*.aux
+/**/*.log
+/**/*.synctex.gz
+njlex/target/
+

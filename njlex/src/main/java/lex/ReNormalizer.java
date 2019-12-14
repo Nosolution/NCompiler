@@ -9,61 +9,17 @@ import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
+import static lex.Global.*;
+
 public class ReNormalizer {
 
     public static void normalize(List<Rule> rules, TreeMap<String, String> terms) throws ParseException {
-//        for (String key : terms.keySet()) {
-//            String term = terms.get(key);
-//            terms.replace(key, replaceEscape(term));
-//        }
-
         freeContext(terms);
         for (Rule rule : rules) {
-            rule.setPattern(standardize(replaceTerms(rule.getPattern(), terms)));
+            rule.setPattern(
+                    standardize(
+                            replaceTerms(rule.getPattern(), terms)));
         }
-
-    }
-
-    /**
-     * Replace every user-customized term in source RE into its own content
-     *
-     * @param regex Source RE
-     * @param terms Term dictionary containing names and their own contents
-     * @return Result of replacement
-     */
-    private static String replaceTerms(String regex, Map<String, String> terms) {
-
-        for (String key : terms.keySet()) {
-            if (regex.contains("{" + key + "}")) {
-                regex = regex.replaceAll("{" + key + "}", terms.get(key));
-            }
-        }
-        return regex;
-    }
-
-    /**
-     * Replace normal escape char '\\' with program-specified escape char '`'
-     *
-     * @param regex Target RE
-     * @return Result of replacement
-     */
-    private static String replaceEscape(String regex) {
-        boolean inBracket = false;
-        boolean inQuote = false;
-        StringBuilder res = new StringBuilder();
-        for (int i = 0; i < regex.length() - 1; i++) {
-            if (regex.charAt(i) == '\\' && ((i > 0 && regex.charAt(i - 1) != '\\') || i == 0) && !inBracket && !inQuote) {
-                res.append('`');
-                res.append(regex.charAt(++i));
-            } else {
-                if (!inQuote && (regex.charAt(i) == '[' || regex.charAt(i) == ']'))
-                    inBracket = !inBracket;
-                else if (regex.charAt(i) == '\"' && !inBracket)
-                    inQuote = !inQuote;
-                res.append(regex.charAt(i));
-            }
-        }
-        return res.toString();
     }
 
     /**
@@ -87,8 +43,25 @@ public class ReNormalizer {
     }
 
     /**
+     * Replace every user-customized term in source RE into its own content
+     *
+     * @param regex Source RE
+     * @param terms Term dictionary containing names and their own contents
+     * @return Result of replacement
+     */
+    private static String replaceTerms(String regex, Map<String, String> terms) {
+
+        for (String key : terms.keySet()) {
+            if (regex.contains("{" + key + "}")) {
+                regex = regex.replaceAll("{" + key + "}", terms.get(key));
+            }
+        }
+        return regex;
+    }
+
+    /**
      * Transform a RE to standard form
-     * Standard form implies there are only 3 operators '.', '|', '*'， 1 escape char '`' and 1 pair of parenthesis
+     * Standard form implies there are only 5 operators '.', '|', '*'，escape, epsilon, and 1 pair of parenthesis
      *
      * @param regex Source RE
      * @return Standardized RE
@@ -102,15 +75,11 @@ public class ReNormalizer {
         for (int i = 0; i < regex.length() - 1; i++) {
             cur = regex.charAt(i);
             next = regex.charAt(i + 1);
+            //Not in the handling processes of [] and ""
             if ((leftBracketIdx == -1) && (leftQuoteIdx == -1)) {
-                if (cur != '\\') {
+                if (cur != ESCAPE) {
                     switch (cur) {
-                        case '[':
-                            leftBracketIdx = i;
-                            break;
-                        case '\"':
-                            leftQuoteIdx = i;
-                            break;
+                        //Handle extended operators and translate them in standard ones
                         case '+':
                         case '?': {
                             if (i == 0) {
@@ -120,35 +89,45 @@ public class ReNormalizer {
                             if (cur == '+')
                                 res.append(formerStr).append(formerStr).append('*');
                             else
-                                res.append("(@|").append(formerStr).append(")");
+                                res.append('(').append(EPSILON).append('|').append(formerStr).append(")");
                         }
                         break;
+                        case '.':
+                            res.append(translateDot());
+                            break;
+                        case '[':
+                            leftBracketIdx = i;
+                            break;
+                        case '\"':
+                            leftQuoteIdx = i;
+                            break;
                         case '{': {
                             if (i == 0) {
                                 throw new ParseException(" Repeat operator shall not be put at the first place");
                             }
-                            int comma = regex.indexOf(',', i + 2);
-                            if (comma == -1)
-                                throw new ParseException("Wrong format");
-                            int minimum = Integer.parseInt(regex.substring(i + 1, comma));
-                            int rightBrace = regex.indexOf('}', comma + 2);
+                            int rightBrace = regex.indexOf('}', i + 1);
                             if (rightBrace == -1)
                                 throw new ParseException("Wrong format");
-                            int maximum = Integer.parseInt(regex.substring(comma + 1, rightBrace));
+                            int minimum, maximum;
+                            int comma = regex.substring(i + 1, rightBrace).indexOf(',');
+                            if (comma == -1) {//{x}
+                                maximum = minimum = Integer.parseInt(regex.substring(i + 1, rightBrace));
+                            } else {
+                                minimum = Integer.parseInt(regex.substring(i + 1, comma));
+                                maximum = comma == rightBrace - 1 ? -1 : Integer.parseInt(regex.substring(comma + 1, rightBrace));//{x,} or {x,y}
+                            }
                             String formerStr = getFormerBasicStr(regex, i);
                             res.append(repeat(formerStr, minimum, maximum));
-
-                        }
-                        case '.':
-                            res.append(transformDot());
                             break;
+                        }
                         default:
+                            //Standard operators and literal chars are copied to res
                             res.append(cur);
                             break;
                     }
                 } else {
-                    res.append('`');
                     switch (next) {
+                        //Have been escaped by the computer and meanings changed
                         case 'n':
                             res.append('\n');
                             break;
@@ -158,58 +137,71 @@ public class ReNormalizer {
                         case 'f':
                             res.append('\f');
                             break;
+                        case '0':
+                            res.append('\0');
+                            break;
                         default:
+                            //If not, they are specially escaped extended operators, which need no escapes in standard REs.
+                            if (STANDARD_OPERATOR.contains(next))
+                                res.append(ESCAPE);
                             res.append(next);
                             break;
                     }
                     i++;
                 }
             } else if (leftBracketIdx != -1) {
+                //Handling process of []
                 if (cur == ']') {
-                    res.append(transformBracket(regex.substring(leftBracketIdx, i + 1)));
+                    //Using subroutine will lose some efficiency but gain a more clear program.
+                    res.append(translateBracket(regex.substring(leftBracketIdx, i + 1)));
                     leftBracketIdx = -1;
                 }
-            } else {//transform from quote
-                if (cur == '\\' && next == '\"') {
-                    res.append(next);
-                    i++;
-                } else if (cur == '\\' && next == '\\') {
-                    res.append('`').append(next);
-                    i++;
+            } else {
+                //Handling process of ""
+                //Considering of efficiency, chose not to handle quotes in a subroutine.
+                //Because the contents in quotes are not sensitive to the context.
+                if (cur == ESCAPE) {
+                    if (next == '\"') {
+                        res.append(next);
+                        i++;
+                    } else if (next == ESCAPE) {
+                        res.append(ESCAPE).append(next);
+                        i++;
+                    } else
+                        //In quotes, only quote mark and escape char themselves can be escaped.
+                        throw new ParseException("Shall not escape char " + next + "in RE quotes");
                 } else if (cur == '\"')
                     leftQuoteIdx = -1;
                 else {
-                    if (Global.ESCAPE_CHARSET.contains(cur))
-                        res.append('`');
+                    if (STANDARD_OPERATOR.contains(cur))
+                        res.append(ESCAPE);
                     res.append(cur);
                 }
             }
         }
 
-        return joinDot(res.toString());
+        return joinDots(res.toString());
     }
 
     /**
-     * Transform the RE in bracket into standard form
+     * Translate the RE in bracket into standard form
      *
      * @param regex [X]
      * @return the result
      */
-    private static String transformBracket(String regex) throws ParseException {
-        boolean complement = regex.charAt(1) == '^';
+    private static String translateBracket(String regex) throws ParseException {
+        boolean needComplete = regex.charAt(1) == '^';
         StringBuilder charSet = new StringBuilder();
         char cur, next;
-        for (int i = 1; i < regex.length() - 1; i++) {
+        for (int i = needComplete ? 1 : 0; i < regex.length() - 2; i++) {
             charSet.append("|");
-
             cur = regex.charAt(i);
             next = regex.charAt(i + 1);
             if (next == '-') {
                 charSet.append(getCharSetOfInterval(cur, regex.charAt(i + 2)));
                 i += 2;
             } else {
-                if (cur == '\\') {
-                    charSet.append('`');
+                if (cur == ESCAPE) {
                     switch (next) {
                         case 'n':
                             charSet.append('\n');
@@ -220,46 +212,23 @@ public class ReNormalizer {
                         case 'f':
                             charSet.append('\f');
                             break;
-                        case '\'':
-                        case '\"':
-                        case '\\':
-                            charSet.append(next);
+                        case '0':
+                            charSet.append('\0');
                             break;
                         default:
-                            break;
-
+                            throw new ParseException("Shall not escape char " + next + "in bracket");
                     }
                     i++;
                 } else
                     charSet.append(cur);
             }
         }
-//        charSet.append(regex.charAt(regex.length() - 2));
-        return "(" + String.join("|", toStrList(complement ? getComplement(charSet.toString()) : charSet.toString())) + ")";
-    }
-
-    /**
-     * Transform content in a pair of quote into standard RE
-     *
-     * @param regex Target regex
-     * @return The result of transformation
-     */
-    private static String transformQuote(String regex) {
-        StringBuilder res = new StringBuilder();
-        char cur, next;
-        for (int i = 1; i < regex.length() - 1; i++) {
-            cur = regex.charAt(i);
-            next = regex.charAt(i + 1);
-            if (cur == '\\') { // next == '\"' or next == '\\'
-                res.append('`').append(next);
-                i++;
-            } else {
-                if (Global.ESCAPE_CHARSET.contains(cur))
-                    res.append('`');
-                res.append(cur);
-            }
-        }
-        return res.toString();
+        cur = regex.charAt(regex.length() - 2);
+        if (cur == ESCAPE)
+            throw new ParseException("Wrong escaping in brackets");
+        else
+            charSet.append(cur);
+        return "(" + String.join("|", toStrList(needComplete ? getComplement(charSet.toString()) : charSet.toString())) + ")";
     }
 
     /**
@@ -267,7 +236,7 @@ public class ReNormalizer {
      *
      * @return The result
      */
-    private static String transformDot() {
+    private static String translateDot() {
         return getComplement("\n");
     }
 
@@ -277,33 +246,35 @@ public class ReNormalizer {
      * @param source  Source string which will repeat specified times
      * @param minimum Minimum of repetitions
      * @param maximum Maximum of repetitions
-     * @return The repetition result
-     */
-    private static String repeat(String source, int minimum, int maximum) {
-        return doRepeat("(" + source + ")", minimum, maximum);
-    }
-
-//    private static String repeat(char c, int minimum, int maximum) {
-//        return doRepeat("(" + c + ")", minimum, maximum);
-//    }
-
-    /**
-     * Truly do repetition, in order to be compatible to char and str
-     *
-     * @param source  Source string which will repeat specified times
-     * @param minimum Minimum of repetitions
-     * @param maximum Maximum of repetitions
      * @return The result after
      */
-    private static String doRepeat(String source, int minimum, int maximum) {
+    private static String repeat(String source, int minimum, int maximum) {
+        source = "(" + source + ")";
         StringBuilder res = new StringBuilder();
         for (int i = 0; i < minimum; i++) {
             res.append(source);
         }
-        for (int i = minimum; i < maximum; i++) {
-            res.append("(@|").append(source).append(")");
+        if (maximum == -1) {
+            res.append(source).append('*');
+        } else {
+            for (int i = minimum; i < maximum; i++) {
+                res.append('(').append(EPSILON).append('|').append(source).append(")");
+            }
         }
         return res.toString();
+    }
+
+    /**
+     * Convert single str to list of elements representing by str
+     *
+     * @param str Target str
+     * @return List of strings containing the element of source str
+     */
+    private static List<String> toStrList(String str) {
+        return str.chars()
+                .mapToObj(c -> (char) c)
+                .map(c -> STANDARD_OPERATOR.contains(c) ? (ESCAPE + String.valueOf(c)) : String.valueOf(c))
+                .collect(Collectors.toList());
     }
 
     /**
@@ -312,14 +283,15 @@ public class ReNormalizer {
      * @param regex Target RE
      * @return Result of joining dots
      */
-    private static String joinDot(String regex) {
+    private static String joinDots(String regex) throws ParseException {
         StringBuilder res = new StringBuilder();
-        char cur, next;
-        for (int i = 0; i < regex.length() - 1; i++) {
+        char cur;
+        for (int i = 0; i < regex.length(); i++) {
             cur = regex.charAt(i);
-            next = regex.charAt(i + 1);
-            if (cur == '`') {
-                res.append(cur).append(next);
+            if (cur == ESCAPE) {
+                if (i == regex.length() - 1 || !STANDARD_OPERATOR.contains(regex.charAt(i + 1)))
+                    throw new ParseException("Wrong escaping");
+                res.append(ESCAPE).append(regex.charAt(i + 1));
                 i++;
             } else if (cur == '(' || cur == '|' || cur == '*') {
                 continue;
@@ -332,7 +304,6 @@ public class ReNormalizer {
         return res.toString();
 
     }
-
 
     /**
      * Get the char set of interval [st, ed]
@@ -365,14 +336,14 @@ public class ReNormalizer {
     }
 
     /**
-     * get the complement set of given charset in terms of FULLCHARSET
+     * Get the complement set of given charset in terms of FULL_CHARSET
      *
-     * @param source Source of char set
-     * @return The complement of given char set
+     * @param source Source of charset
+     * @return The complement of given charset
      */
     private static String getComplement(String source) {
         StringBuilder res = new StringBuilder();
-        for (char c : Global.FULL_CHARSET) {
+        for (char c : FULL_CHARSET) {
             if (source.indexOf(c) == -1)
                 res.append(c);
         }
@@ -392,7 +363,7 @@ public class ReNormalizer {
         if (fromIndex <= 0) {
             throw new ParseException("Wrong index");
         }
-        if (str.charAt(fromIndex - 1) == ')' && str.charAt(fromIndex - 2) != '\\') {
+        if (str.charAt(fromIndex - 1) == ')' && str.charAt(fromIndex - 2) != ESCAPE) {
             int leftParenthesis = str.lastIndexOf('(', fromIndex);
             while (leftParenthesis >= 1 && str.charAt(leftParenthesis - 1) == '\"')
                 leftParenthesis = str.lastIndexOf('(', leftParenthesis - 1);
@@ -402,20 +373,6 @@ public class ReNormalizer {
         } else {
             return str.substring(fromIndex - 1, fromIndex);
         }
-    }
-
-
-    /**
-     * Convert single str to list of elements representing by str
-     *
-     * @param str Target str
-     * @return List of strings containing the element of source str
-     */
-    private static List<String> toStrList(String str) {
-        return str.chars()
-                .mapToObj(c -> (char) c)
-                .map(c -> Global.ESCAPE_CHARSET.contains(c) ? ("\\" + c) : String.valueOf(c))
-                .collect(Collectors.toList());
     }
 
 

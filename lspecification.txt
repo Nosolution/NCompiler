@@ -1,0 +1,9 @@
+definitions
+%%
+rules part
+%%
+user code
+
+definition部分，以缩进或者以%{开头的代码段，会直接拷贝到输出文件的类之外。
+rules部分，在第一条规则之前，以缩进或者以%{开头的代码段，直接拷贝到yylex()方法之内
+user code部分，会直接拷贝到类中，yylex()之外

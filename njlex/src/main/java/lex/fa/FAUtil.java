@@ -17,9 +17,9 @@ import java.util.Map;
 public class FAUtil {
     private final static int ASCII_LEN = 128;
 
-    public static void translate(DFA dfa, List<int[]> arrays, List<String> actions) {
+    public static void translate(DFA dfa, List<int[]> arrays, List<Integer> actIdxes) {
         arrays.clear();
-        actions.clear();
+        actIdxes.clear();
         List<DFANode> dfaNodes = new ArrayList<>(dfa.getNodes());
         int fullSetSize = Global.FULL_CHARSET.size();
 
@@ -46,14 +46,27 @@ public class FAUtil {
         arrays.add(base);
         arrays.add(next);
 
-        Map<Integer, String> actionMap = dfa.getActions();
+        Map<Integer, Integer> actionMap = dfa.getActIdxes();
         int acceptNumber = 1;
         int[] accepts = new int[dfaNodes.size()];
         for (int i : dfa.getAccepts()) {
             accepts[acceptNumber++] = i;
-            actions.add(actionMap.get(i));
+            actIdxes.add(actionMap.get(i));
         }
         arrays.add(accepts);
+    }
 
+    public static DFA transform2DFA(NFA nfa) throws FAException {
+        return new DFA(nfa);
+    }
+
+    public static NFA mergeNFA(List<NFA> nfaList) throws FAException {
+        assert (nfaList.size() > 0);
+        for (NFA nfa : nfaList)
+            nfa.mature();
+        NFA res = nfaList.get(0);
+        for (int i = 1; i < nfaList.size(); i++)
+            res.or(nfaList.get(i));
+        return res;
     }
 }

@@ -6,6 +6,9 @@ import lex.fa.NFA;
 
 import java.util.*;
 
+import static lex.Global.ESCAPE;
+import static lex.Global.STANDARD_OPERATOR;
+
 /**
  * Class with static method that translate a standardized RE to a NFA
  *
@@ -21,7 +24,6 @@ public class ReTranslator {
             BINARY.put('|', 1);
         }
     };
-    private final static char ESCAPE = '`';
 
     /**
      * Only entering entry of this RE parser class, translate Re into an NFA.
@@ -31,8 +33,8 @@ public class ReTranslator {
      * @return NFA constructed basing on the source RE
      * @throws ParseException Will be thrown when something wrong occurs in parsing RE
      */
-    public static NFA translateRe2NFA(String regex, String action) throws ParseException {
-        return toNFA(toSuffix(regex), action);
+    public static NFA translateRe2NFA(String regex, int act_idx) throws ParseException {
+        return toNFA(toSuffix(regex), act_idx);
     }
 
 
@@ -42,27 +44,18 @@ public class ReTranslator {
      * @param regex Target regex
      * @return Regex in suffix form
      */
-    private static String toSuffix(String regex) {
+    private static String toSuffix(String regex) throws ParseException {
         StringBuilder res = new StringBuilder();
         Stack<Character> ops = new Stack<>();
-        char cur, next;
-        for (int i = 0; i < regex.length() - 1; i++) {
+        char cur;
+        for (int i = 0; i < regex.length(); i++) {
             cur = regex.charAt(i);
-            next = regex.charAt(i + 1);
             if (cur == ESCAPE) {
-                //non-operand char in standard regex need to keep escaped
-                switch (next) {
-                    case '(':
-                    case ')':
-                    case '.':
-                    case '|':
-                    case '*':
-                        res.append(cur);
-                        break;
-                    default:
-                        break;
-                }
-                res.append(next);
+                //Defensive check to prevent faults occurrence
+                if (i == regex.length() - 1 || !STANDARD_OPERATOR.contains(regex.charAt(i + 1)))
+                    throw new ParseException("Wrong escaping content");
+                //Keep escaping
+                res.append(ESCAPE).append(regex.charAt(i + 1));
                 i++;
             } else if (isOperand(cur))
                 res.append(cur);
@@ -76,8 +69,11 @@ public class ReTranslator {
                         c = ops.pop();
                     }
                 } else if (UNARY.contains(cur)) {
+                    //Unary operators should convert into suffix form then append to its operand.
+                    //But the only currently supported unary operator `*' is naturally suffixal, hence directly append it to res
                     res.append(cur);
                 } else {
+                    //The priority of current operator must be greater than the top operator of ops stack
                     while (ops.size() > 0 && ops.peek() != '(' && BINARY.get(ops.peek()) >= BINARY.get(cur)) {
                         res.append(ops.pop());
                     }
@@ -85,8 +81,9 @@ public class ReTranslator {
                 }
             }
         }
-        res.append(regex.charAt(regex.length() - 1));
         while (ops.size() > 0) {
+            if (ops.peek() == '(')
+                throw new ParseException("Non-close parenthesis");
             res.append(ops.pop());
         }
         return res.toString();
@@ -99,15 +96,16 @@ public class ReTranslator {
      * @return The constructed NFA
      * @throws ParseException Will be thrown when something wrong occurs in transforming
      */
-    private static NFA toNFA(String regex, String action) throws ParseException {
+    private static NFA toNFA(String regex, int act_idx) throws ParseException {
         Stack<NFA> nfaStk = new Stack<>();
 
-        char cur, next;
-        for (int i = 0; i < regex.length() - 1; i++) {
+        char cur;
+        for (int i = 0; i < regex.length(); i++) {
             cur = regex.charAt(i);
-            next = regex.charAt(i + 1);
             if (cur == ESCAPE) {
-                nfaStk.push(new NFA(next));
+                if (i == regex.length() - 1 || !STANDARD_OPERATOR.contains(regex.charAt(i + 1)))
+                    throw new ParseException("Wrong escaping content");
+                nfaStk.push(new NFA(regex.charAt(i + 1)));
             } else if (isOperand(cur)) {
                 nfaStk.push(new NFA(cur));
             } else {
@@ -142,7 +140,7 @@ public class ReTranslator {
         NFA res = nfaStk.peek();
         try {
             //need to ensure nfa constructed above has only one accept state
-            res.addActions(res.getAccepts().stream().findFirst().get(), action);
+            res.addActIdx(res.getAccepts().stream().findFirst().get(), act_idx);
         } catch (FAException e) {
             throw new ParseException("Failed to translate RE");
         }

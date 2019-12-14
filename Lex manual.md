@@ -160,7 +160,7 @@ Lex来源的一般格式为：
 
 ### 3.2 字符类
 
-字符类是可以使用运算符[]指定的字符类别。结构[abc]与单个字符匹配，可以是a，b或c。在方括号内，大多数运算符的含义都将被忽略。只有三个特殊字符：\-和^。 -字符表示范围。例如，
+字符类是可以使用运算符[]指定的字符类别。结构[abc]与单个字符匹配，可以是a，b或c。在方括号内，大多数运算符的含义都将被忽略。只有三个特殊字符：\\,-和^。 -字符表示范围。例如，
 
 ```text
                                  [a-z0-9<>_]
@@ -893,13 +893,23 @@ Lex中的正则表达式使用以下运算符：
 
 REJECT不会重新扫描输入。 相反，它会记住上一次扫描的结果。 这意味着，如果找到具有尾随上下文的规则并执行了REJECT，则用户一定不能使用unput来更改输入流中即将出现的字符。 这是对用户操纵尚未处理的输入的能力的唯一限制。
 
-## 14. 致谢
+## 14. 错误恢复
+
+The basic requirement for the compiler is to simply stop and issue a message, and cease compilation. There are some common recovery methods that are follows.
+
+1. Panic mode recovery: This is the easiest way of error-recovery and also, it prevents the parser from developing infinite loops while recovering error. The parser discards the input symbol one at a time until one of the designated (like end, semicolon) set of synchronizing tokens (are typically the statement or expression terminators) is found. This is adequate when the presence of multiple errors in same statement is rare. Example: Consider the erroneous expression- (1 + + 2) + 3. Panic-mode recovery: Skip ahead to next integer and then continue. Bison: use the special terminal error to describe how much input to skip.
+E->int|E+E|(E)|error int|(error) 
+2. Phase level recovery: Perform local correction on the input to repair the error. But error correction is difficult in this strategy.
+3. Error productions: Some common errors are known to the compiler designers that may occur in the code. Augmented grammars can also be used, as productions that generate erroneous constructs when these errors are encountered. Example: write 5x instead of 5*x
+4. Global correction: Its aim is to make as few changes as possible while converting an incorrect input string to a valid string. This strategy is costly to implement.
+
+## 15. 致谢
 
 从上面可以明显看出，Lex的外部在Yacc上被模式化，而Aho的字符串匹配例程在内部。 因此，S。C. Johnson和A. V. Aho都是Lex的创始人，也是Lex的调试者。 非常感谢。
 
 当前版本的Lex的代码是由Eric Schmidt设计，编写和调试的。
 
-## 15. 参考
+## 16. 参考
 
 1. B. W. Kernighan and D. M. Ritchie, The C Programming Language, Prentice-Hall, N. J. (1978).
 
@@ -912,3 +922,4 @@ REJECT不会重新扫描输入。 相反，它会记住上一次扫描的结果�
 5. B. W. Kernighan, D. M. Ritchie and K. L. Thompson, QED Text Editor, Computing Science Technical Report No. 5, 1972, Bell Laboratories, Murray Hill, NJ 07974.
 
 6. D. M. Ritchie, private communication. See also M. E. Lesk, The Portable C Library, Computing Science Technical Report No. 31, Bell Laboratories, Murray Hill, NJ 07974.
+

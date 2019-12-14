@@ -1,6 +1,7 @@
 package lex;
 
 import lex.entity.Rule;
+import lex.exceptions.ParseException;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
@@ -18,7 +19,7 @@ import java.util.TreeMap;
 public class LexSourceParser {
 
 
-    private static enum State {start, raw_def, term, rule, subroutine}
+    private final static String DEFAULT_ACTION = "ECHO";
 
     private LexSourceParser() {
     }
@@ -26,18 +27,18 @@ public class LexSourceParser {
     /**
      * Parse given .l file
      *
-     * @param path        path of .l file
-     * @param terms       location to store user-defined regex terms
-     * @param rules       location to store regex rules including actions
-     * @param defs        definitions that will be copied into generated codes
-     * @param subroutines user provide subroutines that will be used in actions
+     * @param path     path of .l file
+     * @param terms    location to store user-defined regex terms
+     * @param rules    location to store regex rules including actions
+     * @param rawDefs  definitions that will be copied into generated codes
+     * @param userCode user provide subroutines that will be used in actions
      * @return True if parse successfully, otherwise false
      */
-    public static boolean parse(String path, TreeMap<String, String> terms, List<Rule> rules, List<String> defs, List<String> subroutines) {
-        State st = State.start;
+    public static boolean parse(String path, TreeMap<String, String> terms, List<Rule> rules, List<String> rawDefs, List<String> localDefs, List<String> userCode) {
+        State st = State.raw;
         String line;
         int lineCount = 0;
-        boolean error = false;
+        boolean inBrace = false;
         boolean inBracket = false;
         boolean multi_actions = false;
         boolean inMark = false;
@@ -50,52 +51,74 @@ public class LexSourceParser {
         }
 
         try {
-            while (!error) {
+            while (true) {
                 line = in.readLine();
                 if (line == null)
                     break;
                 lineCount++;
 
+
                 switch (st) {
-                    case start:
-                        if (line.equals("%{"))
-                            st = State.raw_def;
-                        else if (line.equals("%%"))
-                            st = State.rule;
-                        else
-                            st = State.term;
-                        break;
-                    case raw_def:
-                        if (line.equals("%}"))
-                            st = State.term;
-                        else
-                            defs.add(line);
-                        break;
+                    case raw:
+                        if (inBrace) {
+                            if (line.equals("%}"))
+                                inBrace = false;
+                            else
+                                rawDefs.add(line.trim() + "\n");
+                            continue;
+                        } else {
+                            if (line.equals("%{")) {
+                                inBrace = true;
+                                continue;
+                            } else if (line.startsWith(" ") || line.startsWith("\t")) {
+                                rawDefs.add(line.trim() + "\n");
+                                continue;
+                            } else {
+                                //Didn't satisfy ant format of raw part, change state,
+                                //go on with the code in case term
+                                st = State.term;
+                            }
+                        }
                     case term:
                         if (line.equals("%%"))
-                            st = State.rule;
+                            st = State.local;
                         else {
-                            String[] term_pair = line.split(" ");
-                            if (term_pair.length == 1) {
-                                term_pair = term_pair[0].split("\t");
-
-                            }
+                            String[] term_pair = line.split("[ \t]+");
                             if (term_pair.length != 2)
-                                error = true;
+                                throw new ParseException("Failed to parse definition part");
                             else {
                                 for (int i = 0; i < term_pair[0].length(); i++) {
                                     if (!Character.isAlphabetic(term_pair[0].charAt(i))) {
-                                        error = true;
-                                        break;
+                                        throw new ParseException("Failed to parse definition part");
                                     }
                                 }
                                 terms.put(term_pair[0], term_pair[1]);
                             }
                         }
                         break;
+                    case local:
+                        if (inBrace) {
+                            if (line.equals("%}"))
+                                inBrace = false;
+                            else
+                                localDefs.add(line.trim() + "\n");
+                            continue;
+                        } else {
+                            if (line.equals("%{")) {
+                                inBrace = true;
+                                continue;
+                            } else if (line.startsWith(" ") || line.startsWith("\t")) {
+                                localDefs.add(line.trim() + "\n");
+                                continue;
+                            } else {
+                                //Didn't satisfy ant format of local part, change state,
+                                //go on with the code in case rule
+                                st = State.rule;
+                            }
+                        }
                     case rule:
                         if (line.equals("%%"))
-                            st = State.subroutine;
+                            st = State.userCode;
                         else {
                             line = line.trim();
                             if (multi_actions) {
@@ -107,7 +130,7 @@ public class LexSourceParser {
                                 }
                             } else {
                                 Rule rule = new Rule();
-                                StringBuilder pattern = new StringBuilder("");
+                                StringBuilder pattern = new StringBuilder();
                                 int i = 0;
                                 for (; i < line.length(); i++) {
                                     if (!inBracket) {
@@ -126,23 +149,34 @@ public class LexSourceParser {
                                 rule.setPattern(pattern.toString());
 
                                 String action = line.substring(i).trim();
-                                if (!action.equals("{")) {
+                                if (action.length() == 0)
+                                    rule.setAction(DEFAULT_ACTION + "\n");
+                                else if (!action.equals("{"))
                                     rule.setAction(action + "\n");
-                                } else
+                                else
                                     multi_actions = true;
+
+                                rules.add(rule);
                             }
                         }
-                    case subroutine:
-                        subroutines.add(line);
+                        break;
+                    case userCode:
+                        userCode.add(line + "\n");
+                        break;
+                    default:
+                        break;
                 }
             }
-        } catch (IOException e) {
+        } catch (IOException | ParseException e) {
             e.printStackTrace();
             return false;
         }
 
         //.l file　must have a least one line which is "%%"
-        return lineCount != 0 && !error;
+        return lineCount != 0;
 
     }
+
+    private enum State {raw, term, local, rule, userCode}
+
 }
