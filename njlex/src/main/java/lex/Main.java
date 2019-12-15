@@ -7,6 +7,7 @@ import lex.fa.FAException;
 import lex.fa.FAUtil;
 import lex.fa.NFA;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeMap;
@@ -87,19 +88,28 @@ public class Main {
         }
         System.out.println("COMPLETED");
 
-        List<int[]> arrays = new ArrayList<>();
+        List<int[]> tables = new ArrayList<>();
         List<Integer> actIdxes = new ArrayList<>();
         System.out.println("Translating DFA to arrays...");
         if (dfa != null)
-            FAUtil.translate(dfa, arrays, actIdxes);
+            FAUtil.translate(dfa, tables, actIdxes);
         System.out.println("COMPLETED");
 
-        CodeGenerator.generate(arrays,
-                actIdxes.stream().map(o -> rules.get(o).getAction()).collect(Collectors.toList()),
-                dfa == null ? 0 : dfa.getInitialState(),
-                rawDefs,
-                localDefs,
-                userCode);
+        System.out.println("Generating codes...");
+        CodeGenerator generator = new CodeGenerator();
+        try {
+            generator.generate(tables,
+                    actIdxes.stream().map(o -> rules.get(o).getAction()).collect(Collectors.toList()),
+                    dfa == null ? 0 : dfa.getInitialState(),
+                    rawDefs,
+                    localDefs,
+                    userCode);
+        } catch (IOException e) {
+            System.err.println("Failed to generate code");
+            e.printStackTrace();
+            return;
+        }
+        System.out.println("COMPLETED");
 
 
     }

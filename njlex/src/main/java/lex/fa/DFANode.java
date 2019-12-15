@@ -75,5 +75,9 @@ public class DFANode {
         return transitions.getOrDefault(condition, -1);
     }
 
+    void changeState(int newState) {
+        state = newState;
+    }
+
 
 }

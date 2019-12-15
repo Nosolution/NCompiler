@@ -148,6 +148,7 @@ public class LexSourceParser {
                                 }
                                 rule.setPattern(pattern.toString());
 
+                                //TODO `|' hasn't been achieved
                                 String action = line.substring(i).trim();
                                 if (action.length() == 0)
                                     rule.setAction(DEFAULT_ACTION + "\n");

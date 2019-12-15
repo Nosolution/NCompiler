@@ -233,6 +233,7 @@ public class DFA {
             }
         }
 
+        //minimal state set
         Set<Integer> minimalStates = new HashSet<>(minimalStateMap.values());
         DFANode node;
         for (int i : minimalStates) {
@@ -247,6 +248,22 @@ public class DFA {
                 .forEach(o -> nodeMap.remove(o.getState()));
         nodes = nodes.stream().filter(o -> minimalStates.contains(o.getState())).collect(Collectors.toSet());
 
+        //map to smallest number set
+        Map<Integer, Integer> nodeNumberMap = new HashMap<>();
+        int numberCnt = 0;
+        for (int i : nodes.stream().map(DFANode::getState).sorted().collect(Collectors.toList()))
+            nodeNumberMap.put(i, numberCnt++);
+
+        accepts = accepts.stream().map(nodeNumberMap::get).collect(Collectors.toSet());
+        Set<HashMap.Entry<Integer, Integer>> actIdxEntries = actIdxes.entrySet();
+        actIdxes.clear();
+        actIdxes.putAll(actIdxEntries.stream()
+                .collect(Collectors.toMap(e -> nodeNumberMap.get(e.getKey()), Map.Entry::getValue)));
+        nodeMap.clear();
+        nodes.forEach(o -> {
+            o.changeState(nodeNumberMap.get(o.getState()));
+            nodeMap.put(o.getState(), o);
+        });
 
 //        Set<Integer> minimalStateSet = clusterSet.parallelStream()
 //                .map(o -> o.stream()
