@@ -20,8 +20,8 @@ public class ReTranslator {
     private final static Set<Character> UNARY = new HashSet<>(Collections.singletonList('*'));
     private final static Map<Character, Integer> BINARY = new HashMap<Character, Integer>() {
         {
-            BINARY.put('.', 2);
-            BINARY.put('|', 1);
+            put('.', 2);
+            put('|', 1);
         }
     };
 
@@ -33,8 +33,8 @@ public class ReTranslator {
      * @return NFA constructed basing on the source RE
      * @throws ParseException Will be thrown when something wrong occurs in parsing RE
      */
-    public static NFA translateRe2NFA(String regex, int act_idx) throws ParseException {
-        return toNFA(toSuffix(regex), act_idx);
+    public static NFA translateRe2NFA(String regex, int actIdx) throws ParseException {
+        return toNFA(toSuffix(regex), actIdx);
     }
 
 
@@ -105,7 +105,7 @@ public class ReTranslator {
             if (cur == ESCAPE) {
                 if (i == regex.length() - 1 || !STANDARD_OPERATOR.contains(regex.charAt(i + 1)))
                     throw new ParseException("Wrong escaping content");
-                nfaStk.push(new NFA(regex.charAt(i + 1)));
+                nfaStk.push(new NFA(regex.charAt(++i)));
             } else if (isOperand(cur)) {
                 nfaStk.push(new NFA(cur));
             } else {

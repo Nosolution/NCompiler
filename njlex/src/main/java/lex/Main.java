@@ -22,10 +22,13 @@ import java.util.stream.Collectors;
  */
 public class Main {
 
+    /**
+     * @param args <executable name> lex <src-path>
+     */
     public static void main(String[] args) {
-        assert (args.length == 3);
-        assert (args[1].equals("lex"));
-        String path = args[2];
+        assert (args.length == 2);
+        assert (args[0].equals("lex"));
+        String path = args[1];
         TreeMap<String, String> terms = new TreeMap<>();
         List<Rule> rules = new ArrayList<>();
         List<String> rawDefs = new ArrayList<>();
@@ -78,28 +81,30 @@ public class Main {
         System.out.println("COMPLETED");
 
         System.out.println("Minimizing DFA...");
-        try {
-            if (dfa != null)
-                dfa.minimize();
-        } catch (FAException e) {
-            System.err.println("Failed to minimize DFA");
-            e.printStackTrace();
-            return;
-        }
+        if (dfa != null)
+//                dfa.minimize();
+            dfa = dfa.minimize();
         System.out.println("COMPLETED");
 
         List<int[]> tables = new ArrayList<>();
-        List<Integer> actIdxes = new ArrayList<>();
+        List<Integer> actionIdxes = new ArrayList<>();
         System.out.println("Translating DFA to arrays...");
         if (dfa != null)
-            FAUtil.translate(dfa, tables, actIdxes);
+            FAUtil.translate(dfa, tables, actionIdxes);
         System.out.println("COMPLETED");
 
         System.out.println("Generating codes...");
         CodeGenerator generator = new CodeGenerator();
         try {
+//            generator.generate(tables,
+//                    actionIdxes.stream().map(o -> rules.get(o).getAction()).collect(Collectors.toList()),
+//                    dfa == null ? 0 : dfa.getInitialState(),
+//                    rawDefs,
+//                    localDefs,
+//                    userCode);
             generator.generate(tables,
-                    actIdxes.stream().map(o -> rules.get(o).getAction()).collect(Collectors.toList()),
+                    rules.stream().map(Rule::getAction).collect(Collectors.toList()),
+//                    actionIdxes.stream().map(o -> rules.get(o).getAction()).collect(Collectors.toList()),
                     dfa == null ? 0 : dfa.getInitialState(),
                     rawDefs,
                     localDefs,

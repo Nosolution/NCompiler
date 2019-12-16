@@ -11,6 +11,7 @@ import lombok.Data;
  */
 @Data
 public class Rule {
-    private String pattern;
-    private String action;
+    private String pattern = "";
+    private String action = "";
+
 }

@@ -1,0 +1,24 @@
+
+yy_term_start
+yy_term_end
+yy_cur_idx
+yy_lookahead
+yytext()
+    return new String(source, yy_term_start, yy_term_end- yy_term_start);
+yyleng()
+    return yy_term_end - tt_term_start;
+yy_advance()
+    if(yy_cur_idx<source.length)
+        return source[yy_cur_idx++];
+    else
+        return 0;
+
+construction:
+InputStream, Reader
+
+Self-customized out, need to check if the user has overrided the out
+
+
+4 arrays
+ec: map ascii to a unique number, in current program, is the order in FULL_CHARSET
+base:

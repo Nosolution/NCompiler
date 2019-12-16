@@ -41,7 +41,7 @@ public class LexSourceParser {
         boolean inBrace = false;
         boolean inBracket = false;
         boolean multi_actions = false;
-        boolean inMark = false;
+        boolean inQuote = false;
         BufferedReader in;
         try {
             in = new BufferedReader(new FileReader(path));
@@ -55,7 +55,12 @@ public class LexSourceParser {
                 line = in.readLine();
                 if (line == null)
                     break;
+                else if (line.trim().length() == 0)
+                    continue;
                 lineCount++;
+                //support comments in .l file
+                if (line.startsWith("//") && !inBrace && !multi_actions && st != State.userCode)
+                    continue;
 
 
                 switch (st) {
@@ -83,16 +88,21 @@ public class LexSourceParser {
                         if (line.equals("%%"))
                             st = State.local;
                         else {
-                            String[] term_pair = line.split("[ \t]+");
-                            if (term_pair.length != 2)
+                            line = line.trim();
+                            StringBuilder name = new StringBuilder();
+                            int i = 0;
+                            for (; i < line.length(); i++) {
+                                char cur = line.charAt(i);
+                                if (Character.isLetter(cur))
+                                    name.append(cur);
+                                else
+                                    break;
+                            }
+
+                            if (i == line.length() || (line.charAt(i) != ' ' && line.charAt(i + 1) != '\t'))
                                 throw new ParseException("Failed to parse definition part");
                             else {
-                                for (int i = 0; i < term_pair[0].length(); i++) {
-                                    if (!Character.isAlphabetic(term_pair[0].charAt(i))) {
-                                        throw new ParseException("Failed to parse definition part");
-                                    }
-                                }
-                                terms.put(term_pair[0], term_pair[1]);
+                                terms.put(name.toString(), line.substring(i + 1).trim());
                             }
                         }
                         break;
@@ -133,16 +143,22 @@ public class LexSourceParser {
                                 StringBuilder pattern = new StringBuilder();
                                 int i = 0;
                                 for (; i < line.length(); i++) {
-                                    if (!inBracket) {
-                                        if (line.charAt(i) == '[' && (i == 0 || line.charAt(i) != '\\'))
-                                            inBracket = true;
+                                    boolean escaped = (i == 0 || line.charAt(i) != '\\');
+                                    if (!inQuote) {
+                                        if (!inBracket) {
+                                            if (line.charAt(i) == '[' && !escaped)
+                                                inBracket = true;
+                                            else if (line.charAt(i) == '\"' && !escaped)
+                                                inQuote = true;
+                                        } else {
+                                            if (line.charAt(i) == ']')
+                                                inBracket = false;
+                                        }
                                     } else {
-                                        if (line.charAt(i) == ']')
-                                            inBracket = false;
+                                        if (line.charAt(i) == '\"' && !escaped)
+                                            inQuote = false;
                                     }
-                                    if (line.charAt(i) == '\"' && (i == 0 || line.charAt(i) != '\\'))
-                                        inMark = !inMark;
-                                    if (!inBracket && !inMark && (line.charAt(i) == ' ' || line.charAt(i) == '\t'))
+                                    if (!inBracket && !inQuote && (line.charAt(i) == ' ' || line.charAt(i) == '\t'))
                                         break;
                                     pattern.append(line.charAt(i));
                                 }
@@ -173,7 +189,7 @@ public class LexSourceParser {
             return false;
         }
 
-        //.l file　must have a least one line which is "%%"
+        //.l file must have a least one line which is "%%"
         return lineCount != 0;
 
     }

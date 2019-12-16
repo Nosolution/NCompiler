@@ -15,6 +15,7 @@ public class ReNormalizer {
 
     public static void normalize(List<Rule> rules, TreeMap<String, String> terms) throws ParseException {
         freeContext(terms);
+        rules.stream().filter(o -> o.getPattern().length() == 0).forEach(o -> System.out.println(o.getPattern()));
         for (Rule rule : rules) {
             rule.setPattern(
                     standardize(
@@ -29,12 +30,11 @@ public class ReNormalizer {
      */
     private static void freeContext(TreeMap<String, String> terms) {
         List<String> keys = new ArrayList<>();
-
         for (String key : terms.keySet()) {
             String term = terms.get(key);
             for (String s : keys) {
                 if (term.contains("{" + s + "}")) {
-                    String res = term.replaceAll("{" + s + "}", terms.get(s));
+                    String res = replaceAll(term, "{" + s + "}", terms.get(s));
                     terms.replace(key, res);
                 }
             }
@@ -53,10 +53,22 @@ public class ReNormalizer {
 
         for (String key : terms.keySet()) {
             if (regex.contains("{" + key + "}")) {
-                regex = regex.replaceAll("{" + key + "}", terms.get(key));
+                regex = replaceAll(regex, "{" + key + "}", terms.get(key));
             }
         }
         return regex;
+    }
+
+    private static String replaceAll(String src, String key, String replacement) {
+        StringBuilder res = new StringBuilder();
+        int prev = 0, cur = src.indexOf(key);
+        while (cur != -1) {
+            res.append(src, prev, cur).append(replacement);
+            prev = cur + key.length();
+            cur = src.indexOf(key, prev);
+        }
+        res.append(src, prev, src.length());
+        return res.toString();
     }
 
     /**
@@ -72,9 +84,11 @@ public class ReNormalizer {
         int leftBracketIdx = -1;
         int leftQuoteIdx = -1;
         char cur, next;
-        for (int i = 0; i < regex.length() - 1; i++) {
+        for (int i = 0; i < regex.length(); i++) {
             cur = regex.charAt(i);
-            next = regex.charAt(i + 1);
+            if (cur == ESCAPE && i == regex.length() - 1)
+                throw new ParseException("Last char of regex cannot be escape char");
+            next = (i == regex.length() - 1 ? 0 : regex.charAt(i + 1));
             //Not in the handling processes of [] and ""
             if ((leftBracketIdx == -1) && (leftQuoteIdx == -1)) {
                 if (cur != ESCAPE) {
@@ -85,11 +99,13 @@ public class ReNormalizer {
                             if (i == 0) {
                                 throw new ParseException(cur + " operator shall not be put at the first place");
                             }
-                            String formerStr = getFormerBasicStr(regex, i);
+                            String formerStr = getFormerBasicStr(res.toString(), res.length());
                             if (cur == '+')
-                                res.append(formerStr).append(formerStr).append('*');
-                            else
-                                res.append('(').append(EPSILON).append('|').append(formerStr).append(")");
+                                res.append(formerStr).append('*');
+                            else {
+                                res.insert(res.length() - formerStr.length(), "(" + EPSILON + "|");
+                                res.append(")");
+                            }
                         }
                         break;
                         case '.':
@@ -116,7 +132,7 @@ public class ReNormalizer {
                                 minimum = Integer.parseInt(regex.substring(i + 1, comma));
                                 maximum = comma == rightBrace - 1 ? -1 : Integer.parseInt(regex.substring(comma + 1, rightBrace));//{x,} or {x,y}
                             }
-                            String formerStr = getFormerBasicStr(regex, i);
+                            String formerStr = getFormerBasicStr(res.toString(), i);
                             res.append(repeat(formerStr, minimum, maximum));
                             break;
                         }
@@ -131,6 +147,8 @@ public class ReNormalizer {
                         case 'n':
                             res.append('\n');
                             break;
+                        case 'r':
+                            res.append('\r');
                         case 't':
                             res.append('\t');
                             break;
@@ -180,6 +198,8 @@ public class ReNormalizer {
             }
         }
 
+        if (res.length() == 0)
+            System.out.println(regex);
         return joinDots(res.toString());
     }
 
@@ -193,19 +213,28 @@ public class ReNormalizer {
         boolean needComplete = regex.charAt(1) == '^';
         StringBuilder charSet = new StringBuilder();
         char cur, next;
-        for (int i = needComplete ? 1 : 0; i < regex.length() - 2; i++) {
-            charSet.append("|");
+        for (int i = needComplete ? 2 : 1; i < regex.length() - 1; i++) {
+//            charSet.append("|");
             cur = regex.charAt(i);
             next = regex.charAt(i + 1);
             if (next == '-') {
-                charSet.append(getCharSetOfInterval(cur, regex.charAt(i + 2)));
-                i += 2;
+                if (Character.isLetterOrDigit(cur) && i < regex.length() - 3 && Character.isLetterOrDigit(regex.charAt(i + 2))) {
+                    charSet.append(getCharSetOfInterval(cur, regex.charAt(i + 2)));
+                    i += 2;
+                } else {
+                    charSet.append(cur).append(next);
+                    i++;
+                }
             } else {
                 if (cur == ESCAPE) {
+                    if (i == regex.length() - 2)
+                        throw new ParseException("Last char in the bracket cannot be escape char");
                     switch (next) {
                         case 'n':
                             charSet.append('\n');
                             break;
+                        case '\r':
+                            charSet.append('\r');
                         case 't':
                             charSet.append('\t');
                             break;
@@ -215,19 +244,22 @@ public class ReNormalizer {
                         case '0':
                             charSet.append('\0');
                             break;
+                        case '\\':
+                            charSet.append('\\');
+                            break;
                         default:
-                            throw new ParseException("Shall not escape char " + next + "in bracket");
+                            throw new ParseException("Shall not escape char " + next + " in brackets");
                     }
                     i++;
                 } else
                     charSet.append(cur);
             }
         }
-        cur = regex.charAt(regex.length() - 2);
-        if (cur == ESCAPE)
-            throw new ParseException("Wrong escaping in brackets");
-        else
-            charSet.append(cur);
+//        cur = regex.charAt(regex.length() - 2);
+//        if (cur == ESCAPE)
+//            throw new ParseException("Wrong escaping in brackets");
+//        else
+//            charSet.append(cur);
         return "(" + String.join("|", toStrList(needComplete ? getComplement(charSet.toString()) : charSet.toString())) + ")";
     }
 
@@ -237,7 +269,7 @@ public class ReNormalizer {
      * @return The result
      */
     private static String translateDot() {
-        return getComplement("\n");
+        return "(" + String.join("|", toStrList(getComplement("\n"))) + ")";
     }
 
     /**
@@ -285,24 +317,53 @@ public class ReNormalizer {
      */
     private static String joinDots(String regex) throws ParseException {
         StringBuilder res = new StringBuilder();
-        char cur;
+        char cur, next;
         for (int i = 0; i < regex.length(); i++) {
             cur = regex.charAt(i);
+
             if (cur == ESCAPE) {
                 if (i == regex.length() - 1 || !STANDARD_OPERATOR.contains(regex.charAt(i + 1)))
                     throw new ParseException("Wrong escaping");
+//                next = regex.charAt(i + 1);
                 res.append(ESCAPE).append(regex.charAt(i + 1));
                 i++;
-            } else if (cur == '(' || cur == '|' || cur == '*') {
-                continue;
-            } else {
+            } else if (cur == '(') {
+                int rightParenthesis = findRightParenthesis(regex, i + 1);
+                if (rightParenthesis == -1)
+                    throw new ParseException("Unclosed Parenthesis");
+                else if (rightParenthesis > i + 1)
+                    res.append("(").append(joinDots(regex.substring(i + 1, rightParenthesis))).append(")");
+                i = rightParenthesis;
+            } else
                 res.append(cur);
+
+            if (i < regex.length() - 1) {
+                if (regex.charAt(i + 1) == '|') {
+                    res.append(regex.charAt(++i));
+                } else if (regex.charAt(i + 1) != '*') {
+                    res.append('.');
+                }
             }
-            res.append('.');
+
         }
-        res.append(regex.charAt(regex.length() - 1));
+
         return res.toString();
 
+    }
+
+    private static int findRightParenthesis(String src, int fromIndex) {
+        int nest = -1, i = fromIndex;
+        for (; i < src.length(); i++) {
+            if (src.charAt(i) == ESCAPE)
+                i++;
+            else if (src.charAt(i) == '(')
+                nest--;
+            else if (src.charAt(i) == ')')
+                nest++;
+            if (nest == 0)
+                break;
+        }
+        return nest == 0 ? i : -1;
     }
 
     /**

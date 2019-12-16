@@ -1,9 +1,6 @@
 package lex.fa;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -22,7 +19,7 @@ public class NFA {
     private Set<Integer> accepts; //accept state set
     private Set<NFANode> nodes;   //node set owned be the nfa
     private Map<Integer, NFANode> nodeMap;//map that maps NFANode identify state number to its reference, redundant for high performance
-    private Map<Integer, Integer> actIdxes;//mapping node representing accept state to its action. Index is used to choose foremost matched action
+    private Map<Integer, Integer> actIdxMap;//mapping node representing accept state to its action. Index is used to choose foremost matched action
     private boolean isMatured;
 
     public NFA() {
@@ -34,7 +31,7 @@ public class NFA {
         accepts = new HashSet<>();
         nodes = new HashSet<>();
         nodeMap = new HashMap<>();
-        actIdxes = new HashMap<>();
+        actIdxMap = new HashMap<>();
         isMatured = false;
         addNode(initial);
 
@@ -42,6 +39,7 @@ public class NFA {
         initial.addTransition(transition, accept.getState());
         accepts.add(accept.getState());
         addNode(accept);
+//        System.out.println(initial.getState() + "-" + transition + "->" + accept.getState());
     }
 
     /**
@@ -83,9 +81,10 @@ public class NFA {
      * Update nodeMap according to {@code nodes}
      */
     private void updateMap() {
-        nodes.parallelStream()
-                .filter(o -> !nodeMap.containsKey(o.getState()))
-                .forEach(o -> nodeMap.put(o.getState(), o));
+//        nodes.parallelStream()
+//                .filter(o -> !nodeMap.containsKey(o.getState()))
+//                .forEach(o -> nodeMap.put(o.getState(), o));
+        nodes.forEach(o -> nodeMap.put(o.getState(), o));
     }
 
     Set<NFANode> getNodes() {
@@ -96,9 +95,11 @@ public class NFA {
      * Add a new node and update related fields
      */
     private void addNode(NFANode node) {
-        nodes.add(node);
-        if (!nodeMap.containsKey(node.getState()))
+//        nodes.add(node);
+        if (!nodeMap.containsKey(node.getState())) {
+            nodes.add(node);
             nodeMap.put(node.getState(), node);
+        }
     }
 
     /**
@@ -108,20 +109,21 @@ public class NFA {
      * @return The epsilon-closure of given set
      */
     Set<Integer> getEClosure(Set<Integer> source) {
-        Stream<NFANode> withECondition =
-                nodes.parallelStream()
-                        .filter(o -> source.contains(o.getState()))
-                        .filter(o -> o.getConditions().contains(EPSILON));
+        Set<Integer> transferred = source.parallelStream()
+                .map(o -> nodeMap.get(o))
+                //In regular, there can't be null in the result of mapping, but exceptions do be thrown from here
+                //TODO fix NullPointerException
+                .filter(Objects::nonNull)
+                .flatMap(o -> o.transfer(EPSILON).stream())
+                .collect(Collectors.toSet());
 
-        if (withECondition.count() == 0)
+        Set<Integer> oneStepClosure = Stream.concat(source.stream(), transferred.stream()).collect(Collectors.toSet());
+
+        if (source.size() == oneStepClosure.size())
             return source;
         else {
-            Set<Integer> closure = withECondition
-                    .flatMap(o -> o.transfer(EPSILON).stream())
-                    .collect(Collectors.toSet());
-
             //Recursive
-            return Stream.concat(source.stream(), getEClosure(closure).stream()).collect(Collectors.toSet());
+            return getEClosure(oneStepClosure);
         }
     }
 
@@ -136,7 +138,7 @@ public class NFA {
         if (!accepts.contains(accept))
             throw new FAException("Cannot assign action to non-accept state");
         else
-            actIdxes.put(accept, act_idx);
+            actIdxMap.put(accept, act_idx);
     }
 
     /**
@@ -147,10 +149,10 @@ public class NFA {
      * @throws FAException if the state is not mapping to an action index
      */
     int getActIdx(int state) throws FAException {
-        if (!actIdxes.containsKey(state))
+        if (!actIdxMap.containsKey(state))
             throw new FAException("Isn't mapping to an action index");
         else
-            return actIdxes.get(state);
+            return actIdxMap.get(state);
 
     }
 
@@ -163,10 +165,15 @@ public class NFA {
      */
     Set<Integer> transfer(char condition, Set<Integer> states) {
         Set<Integer> transferRes =
-                nodes.parallelStream()
-                        .filter(o -> !states.contains(o.getState()))
-                        .filter(o -> !o.getConditions().contains(condition))
-                        .flatMap(o -> o.transfer(condition).stream()).collect(Collectors.toSet());
+                states.parallelStream()
+                        .map(o -> nodeMap.get(o))
+                        .filter(o -> o.getConditions().contains(condition))
+                        .flatMap(o -> o.transfer(condition).stream())
+                        .collect(Collectors.toSet());
+//        nodes.parallelStream()
+//                .filter(o -> !states.contains(o.getState()))
+//                .filter(o -> !o.getConditions().contains(condition))
+//                .flatMap(o -> o.transfer(condition).stream()).collect(Collectors.toSet());
         return getEClosure(transferRes);
     }
 
@@ -177,7 +184,7 @@ public class NFA {
      * @throws FAException if attempt to modify the nfa after setting an action
      */
     private void modificationCheck() throws FAException {
-        if (actIdxes.size() != 0)
+        if (actIdxMap.size() != 0)
             throw new FAException("Cannot change nfa with actions set");
     }
 
@@ -186,14 +193,17 @@ public class NFA {
      *
      * @param another another nfa, will be appended to the end to this nfa
      * @return constructed nfa, also this nfa
-     * @throws FAException if some nfa has been set an action， preventing modification
+     * @throws FAException if some nfa has been set an action, preventing modification
      */
     public NFA concat(NFA another) throws FAException {
         modificationCheck();
         another.modificationCheck();
         this.nodes.stream()
                 .filter(o -> accepts.contains(o.getState()))
-                .forEach(o -> o.addTransition(EPSILON, another.getInitialState()));
+                .forEach(o -> {
+                    o.addTransition(EPSILON, another.getInitialState());
+//                    System.out.println(o.getState() + "-->" + another.getInitialState());
+                });
         this.nodes.addAll(another.nodes);
         this.updateMap();
         this.accepts = another.accepts;
@@ -210,21 +220,26 @@ public class NFA {
         NFANode newInitial = NFANodeFactory.produceNode();
         newInitial.addTransition(EPSILON, this.getInitialState());
         newInitial.addTransition(EPSILON, another.getInitialState());
+//        System.out.println(newInitial.getState() + "-->" + this.getInitialState());
+//        System.out.println(newInitial.getState() + "-->" + another.getInitialState());
         initial = newInitial;
-
+        addNode(initial);
         nodes.addAll(another.nodes);
         accepts.addAll(another.accepts);
 
         if (isMatured) {
             //Only merge nfa fields, not constructing new accept states
-            actIdxes.putAll(another.actIdxes);
+            actIdxMap.putAll(another.actIdxMap);
         } else {
             //During the construction process
             NFANode newAccept = NFANodeFactory.produceNode();
             addNode(newAccept);
             nodes.parallelStream()
                     .filter(o -> accepts.contains(o.getState()))
-                    .forEach(o -> o.addTransition(EPSILON, newAccept.getState()));
+                    .forEach(o -> {
+                        o.addTransition(EPSILON, newAccept.getState());
+//                        System.out.println(o.getState() + "-->" + newAccept.getState());
+                    });
             accepts.clear();
             accepts.add(newAccept.getState());
         }
@@ -235,30 +250,37 @@ public class NFA {
     /**
      * Make this
      *
-     * @return
-     * @throws FAException
+     * @return the nfa with repetition
+     * @throws FAException if the nfa cannot be modified
      */
     public NFA repeat() throws FAException {
         modificationCheck();
-        NFANode newInitial = NFANodeFactory.produceNode();
-        newInitial.addTransition(EPSILON, getInitialState());
+//        NFANode newInitial = NFANodeFactory.produceNode();
+//        newInitial.addTransition(EPSILON, getInitialState());
+//        System.out.println(newInitial.getState() + "-->" + getInitialState());
 
-        NFANode newAccept = NFANodeFactory.produceNode();
-        addNode(newAccept);
-        nodes.parallelStream()
-                .filter(o -> accepts.contains(o.getState()))
-                .forEach(o -> {
-                    o.addTransition(EPSILON, getInitialState());
-                    o.addTransition(EPSILON, newAccept.getState());
-                });
-        newInitial.addTransition(EPSILON, newAccept.getState());
-        accepts.clear();
-        accepts.add(newAccept.getState());
+//        NFANode newAccept = NFANodeFactory.produceNode();
+//        addNode(newAccept);
+//        nodes.parallelStream()
+//                .filter(o -> accepts.contains(o.getState()))
+//                .forEach(o -> {
+//                    o.addTransition(EPSILON, getInitialState());
+//                    o.addTransition(EPSILON, newAccept.getState());
+//                });
+//        newInitial.addTransition(EPSILON, newAccept.getState());
+//        accepts.clear();
+//        accepts.add(newAccept.getState());
+
+        accepts.forEach(o -> {
+            initial.addTransition(EPSILON, o);
+//            System.out.println(initial.getState() + "<-->" + o);
+            nodeMap.get(o).addTransition(EPSILON, initial.getState());
+        });
         return this;
     }
 
     void mature() throws FAException {
-        if (actIdxes.isEmpty())
+        if (actIdxMap.isEmpty())
             throw new FAException("Haven't set an action");
         isMatured = true;
     }

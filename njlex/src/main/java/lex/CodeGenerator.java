@@ -13,7 +13,7 @@ import java.util.List;
  * @since 2019/12/13
  */
 public class CodeGenerator {
-    private final static String NPOS = "-1";
+    private final static String NPOS = "0";
     private PrintStream outStream;
     private String target;
 
@@ -22,7 +22,7 @@ public class CodeGenerator {
     }
 
     public CodeGenerator() {
-        this("Lex.yy.java");
+        this("YyLex.java");
     }
 
     /**
@@ -47,47 +47,45 @@ public class CodeGenerator {
 
 
         outStream.println("public class YyLex {");
-        writeConstants(tables, startState);
+        writeConstants(startState);
         writeFieldDecls();
         outStream.println("\tpublic int yylex() throws IOException {");
         writeInitialization();
-        writeLocals(localDefs);
+        writeLocals(tables, localDefs);
 
         writeDriver(actions);
-        outStream.println("\treturn yy_eof() ? SUCCESS : FAILURE;");
+        outStream.println("\t\treturn yy_eof() ? SUCCESS : FAILURE;");
         outStream.println("\t}");
 
         //main entry
-        outStream.println("\tpublic static void main(String[] arg) throws IOException {");
-        outStream.println("\t\tassert(args.length == 2);");
-        outStream.println("\t\tYyLex lex = new YyLex(args[1]);");
-        outStream.println("\t\tlex.yylex(args);");
+        outStream.println("\tpublic static void main(String[] args) throws IOException {");
+        outStream.println("\t\tassert(args.length == 1);");
+        outStream.println("\t\tYyLex lex = new YyLex(args[0]);");
+        outStream.println("\t\tif (lex.yylex() == SUCCESS)");
+        outStream.println("\t\t\tSystem.out.println(\"SUCCESS\");");
+        outStream.println("\t\telse");
+        outStream.println("\t\t\tSystem.out.println(\"FAILURE\");");
         outStream.println("\t}");
         outStream.println();
 
-
         writeConstructions();
         writeYyHelpers();
-
         outStream.println();
-        outStream.println("}");
-
 
         for (String line : userCode) {
-            outStream.println(line);
+            outStream.print("\t");
+            outStream.print(line);
         }
 
+        outStream.println("}");
     }
 
     private void writeHeaders() {
         outStream.println("import java.io.*;");
     }
 
-    private void writeConstants(List<int[]> tables, int startState) {
-        writeIntArray("yy_charset", tables.get(0));
-        writeIntArray("yy_base", tables.get(1));
-        writeIntArray("yy_next", tables.get(2));
-        writeIntArray("yy_accept", tables.get(3));
+    private void writeConstants(int startState) {
+
         outStream.println("\tprivate final static int START_STATE = " + startState + ";");
         outStream.println("\tpublic final static int SUCCESS = 0;");
         outStream.println("\tpublic final static int FAILURE = -1;");
@@ -126,7 +124,11 @@ public class CodeGenerator {
         outStream.println("");
     }
 
-    private void writeLocals(List<String> localDefs) {
+    private void writeLocals(List<int[]> tables, List<String> localDefs) {
+        writeTable("yy_charset", tables.get(0));
+        writeTable("yy_base", tables.get(1));
+        writeTable("yy_next", tables.get(2));
+        writeTable("yy_accept", tables.get(3));
         outStream.println("\t\tint yy_cur_st = START_STATE;");
         outStream.println("\t\tint yy_last_accept_st = YY_NO_STATE;");
         outStream.println("\t\tint yy_next_st = YY_NO_STATE;");
@@ -136,7 +138,7 @@ public class CodeGenerator {
             outStream.print("\t\t");
             outStream.println(def);
         }
-        outStream.println("");
+        outStream.println();
     }
 
     private void writeDriver(List<String> actions) {
@@ -147,13 +149,13 @@ public class CodeGenerator {
         outStream.println("\t\t\t\tyy_mark_end();");
         outStream.println("\t\t\t\tyy_last_accept_st = yy_cur_st;");
         outStream.println("\t\t\t}");
-        outStream.println("");
+        outStream.println();
 
         //read a new char
         outStream.println("\t\t\tyy_lookahead = yy_advance();");
         //check if has reached the EOF
         outStream.println("\t\t\tif (yy_lookahead == YY_EOF){");
-        outStream.println("\t\t\t\tif (yy_cur_st == START_STATE && !yy_in_process) {");
+        outStream.println("\t\t\t\tif (yy_last_accept_st != YY_NO_STATE && yy_cur_st == yy_last_accept_st) {");
         outStream.println("\t\t\t\t\tyy_next_st = YY_NO_STATE;");
         outStream.println("\t\t\t\t} else {");
         outStream.println("\t\t\t\t\tSystem.err.println(\"Failed to parse source file\");");
@@ -179,20 +181,29 @@ public class CodeGenerator {
         outStream.println("\t\t\t\t\tyy_back_to_mark();");
         outStream.println();
         outStream.println("\t\t\t\t\tyy_act = yy_accept[yy_cur_st];");
-        outStream.println("\t\t\t\t\tswitch(act_idx) {");
+        outStream.println("\t\t\t\t\tswitch(yy_act) {");
 //            outStream.println("      case 0: {");
 //            //writer.println("...");
 //            outStream.println("          break;");
 //            outStream.println("  }");
-        //TODO ECHO, BEGIN, REJECT may need to be handled
+        //TODO ECHO, DISCARD, BEGIN, REJECT may need to be handled
         for (int i = 0; i < actions.size(); i++) {
             outStream.println("\t\t\t\t\t\tcase " + i + ": {");
-            outStream.println("\t\t\t\t\t\t\t");
+            outStream.print("\t\t\t\t\t\t\t");
             String action = actions.get(i);
             if (action.equals("ECHO\n"))
-                outStream.println("yy_echo();\n");
-            else
-                outStream.println(actions.get(i));
+                outStream.println("yy_echo();");
+            else if (action.equals("DISCARD\n"))
+                outStream.println("yy_discard();");
+            else {
+                String[] lines = actions.get(i).split("\n");
+                for (int j = 0; j < lines.length; j++) {
+                    outStream.println(lines[j]);
+                    if (j < lines.length - 1)
+                        outStream.print("\t\t\t\t\t\t\t");
+                }
+//                outStream.print(actions.get(i));
+            }
             outStream.println("\t\t\t\t\t\t\tbreak;");
             outStream.println("\t\t\t\t\t\t}");
         }
@@ -293,6 +304,10 @@ public class CodeGenerator {
         outStream.println("\t}");
         outStream.println();
 
+        outStream.println("\tprivate void yy_discard() {");
+        outStream.println("\t}");
+        outStream.println();
+
         outStream.println("\tprivate boolean yy_eof() {");
         outStream.println("\t\t//Can be extended by user");
         outStream.println("\t\treturn true;");
@@ -329,7 +344,7 @@ public class CodeGenerator {
         outStream.println();
 
         outStream.println("\tprivate void yy_set_printer() throws IOException {");
-        outStream.println("\t\tyy_out = new PrintStream(\"Lex.yy.java\");");
+        outStream.println("\t\tyy_out = new PrintStream(\"yy.out\");");
         outStream.println("\t}");
     }
 
@@ -339,13 +354,19 @@ public class CodeGenerator {
      * @param name  specified array name
      * @param array array content
      */
-    private void writeIntArray(String name, int[] array) {
-        outStream.print("\tprivate final static int[] " + name + " = new int[]{ ");
+    private void writeTable(String name, int[] array) {
+        outStream.print("\t\tint[] " + name + " = new int[]{ ");
         for (int i = 0; i < array.length; i++) {
             outStream.print(array[i]);
             if (i < array.length - 1)
                 outStream.print(", ");
         }
         outStream.println("};");
+//        outStream.println("\t\tint[] " + name + " = new int[" + array.length + "];");
+//        outStream.println("\t\t{");
+//        for (int i = 0; i < array.length; i++) {
+//            outStream.printf("\t\t\t%s[%d] = %d;\n", name, i, array[i]);
+//        }
+//        outStream.println("\t\t}\n");
     }
 }

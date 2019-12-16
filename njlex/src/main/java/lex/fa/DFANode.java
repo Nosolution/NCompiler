@@ -30,8 +30,7 @@ public class DFANode {
      */
     public void addTransition(char condition, int dest) {
         transitions.put(condition, dest);
-        if (conditions != null)
-            conditions.add(condition);
+        conditions = null;
     }
 
     /**
