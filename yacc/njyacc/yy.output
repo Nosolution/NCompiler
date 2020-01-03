@@ -1,0 +1,20 @@
+Source: 7.3+(-(3)+2*3.4)/(1+0.5)^2
+Reduce: E->NUM
+Reduce: E->NUM
+Reduce: E->(E)
+Reduce: E->-E
+Reduce: E->NUM
+Reduce: E->NUM
+Reduce: E->E*E
+Reduce: E->E+E
+Reduce: E->(E)
+Reduce: E->NUM
+Reduce: E->NUM
+Reduce: E->E+E
+Reduce: E->(E)
+Reduce: E->NUM
+Reduce: E->E^E
+Reduce: E->E/E
+Reduce: E->E+E
+Reduce: E'->E
+The calculation result is: 8.988889

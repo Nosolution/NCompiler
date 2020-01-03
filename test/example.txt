@@ -1,3 +1,0 @@
-int  char  
-iden char ccc
-  int  

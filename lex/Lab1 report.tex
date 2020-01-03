@@ -1,0 +1,347 @@
+\documentclass[a4paper]{ctexart} %CTEX报告文章格式
+\usepackage[top=3cm,bottom=2cm,left=2cm,right=2cm]{geometry} % 页边距
+\usepackage{indentfirst}
+\usepackage{graphicx}
+
+\setlength{\parindent}{0em}
+\CTEXsetup[format={\Large\bfseries}]{section}
+\CTEXsetup[name={,、},number={\chinese{section}}]{section}
+
+\title{编译原理Lab1实验报告}
+\author{Nosolution}
+\date{}
+\begin{document}
+	\maketitle
+	
+	\section{目标}
+	通过自己动手实现Lex程序，加深理解编译原理课程中学习到的理论知识，主要熟悉和思考正则表达式到DFA的转换过程。
+
+	\section{项目描述}
+
+	\subsection{项目简介}
+	项目使用java语言实现，载体为maven项目。在lex包下的每一个模块(单独的文件或者子包)分别实现一部分功能。\\
+	其中Main文件为项目的入口和驱动文件，Global文件定义全局需要的常量，LexSourceParser负责分析给定的lex源规则文件，ReNormalizer紧接着对读入的正则表达式进行规范化处理，ReTranslator将规范化后的正则表达式翻译为NFA，fa模块提供FA(包括NFA和DFA)的定义和交互逻辑，主要实现NFA到DFA和DFA到数据表的转换，最后由CodeGenerator生成对应的能分析符合给定规则的字符流的代码。
+
+	\subsection{编译}
+
+	进入pom文件所在目录，执行打包命令：
+
+	\verb|mvn package -Dmaven.test.skip=true|
+
+	如果成功，会在在target子目录下生成njlex-1.0.jar和njlex-1.0-jar-with-dependencies.jar文件
+
+	\subsection{运行}
+
+	njlex-1.0-jar-with-dependencies.jar文件已经打包好所需依赖，直接运行：
+
+	\verb|java -jar njlex-1.0-jar-with-dependencies.jar lex <lex源规则文件路径>|
+
+	在当前目录下生成词法分析器源文件YyLex.java。
+
+	\subsection{使用分析器}
+
+	编译：\verb|javac YyLex.java|\\
+	运行：\verb|java YyLex <待分析文件路径>|\\
+	分析结果写入名为"yy.out"的文件
+
+	\section{基本思想和方法}
+
+	实验实现主要采用了结构化编程的方式，那些单独的文件基本在单例的状态下解决问题(单例或者静态方法)，fa包中的几个类有一定的交互，主要分为两类，FA类和FANode类。其中FANode代表一个有限状态机转换图中的一个节点，以自身的状态作为标志，知晓自己所有的转移条件和转移目标。FA类则是节点的集合，聚集了所有节点的信息并且有额外的操作，比如NFA之间可以完成concat, or, repeat的操作(后见THOMSON算法)，DFA可以通过NFA构造自身，或者实现状态的最小化。可以见到类的设计并没有很好地符合面向对象的设计范式，算是时间限制下的一个不完美之处。
+
+	\section{假设}
+	假设，也就等同于本实验实现了多少功能
+
+	\subsection{Lex源规则文件的编写方式}
+
+	我所定义的Lex源文件规则与标准Lex的类似，主要构成：
+
+	\begin{verbatim}
+	(raws)
+	definition
+	%%
+	(locals)
+	rules
+	%%
+	user code
+	\end{verbatim}
+
+	考虑到java语言代码的特性，在其上做了一些修改，其中各部分解释如下：
+
+	\begin{enumerate}
+		\item raws部分: 在第一条definition之前定义
+			\begin{itemize}
+				\item 以空白符(空格或者制表符)开头，到本行末尾，此行会被识别为一条\verb|raw definition|
+				\item   以"$\%${"开始，以"$\%$}"结束，开始结束符号单独成行，中间所有行会被识别为\verb|raw definition|
+				\item \verb|raw definition|部分的所有内容会按原样输出到生成文件\verb|YyLex|的类定义之前，诸如\verb|import|或者\verb|package|之类的定义可以在此写入
+			\end{itemize}
+		\item definition部分：用户编写的正则表达式定义，格式\verb|<name> <definition>|，中间用空格或者制表符分隔
+			\begin{itemize}
+				\item \verb|name|只能由字母组成
+				\item definition为\verb|name|所标志的正则表达式
+				\item 在规则部分将会把所有规则中\verb|{<name>}|形式部分替换成其定义
+			\end{itemize}
+		\item locals部分：类似raws部分，在第一条rule之前定义，有单行和多行两种形式
+			\begin{itemize}
+				\item local部分的所有内容会被拷贝到\verb|yylex()|方法的头部，用户可以自行声明和初始化局部变量，希望变量名不要以"yy"开头，以免与程序中预先声明的变量冲突。
+			\end{itemize}
+		\item ruls部分：用户定义的正则表达式规则，格式\verb|<pattern> <action>|，中间用空格或者制表符分隔
+			\begin{itemize}
+				\item pattern为可匹配的正则表达式
+				\item action为匹配后执行的动作，分为单行和多行
+				\begin{itemize}
+					\item 直接写入动作便是单行
+					\item action部分为"$\%${"代表会编写多行，直到某一行除去空白符后为"$\%$}"则停止记录该pattern所指定的action
+				\end{itemize}
+			\end{itemize}
+		\item user code部分：用户自行定义的类成员部分
+			\begin{itemize}
+				\item 会被拷贝到\verb|YyLex\verb|类内部，\verb|yylex()\verb|方法之外
+				\item 可以包括类成员变量和类方法
+			\end{itemize}
+	\end{enumerate}
+
+	\subsection{Lex源规则文件}
+
+	类似标准Lex源文件，我也同样提供了一些可用的变量和函数，比如：
+
+	\begin{itemize}
+		\item \verb|yytext()|，代表被识别到的字符串
+		\item \verb|yyleng()|，被识别字符串的长度
+		\item \verb|yy_out|，输出流，类型为PrintStream
+	\end{itemize}
+
+	等，因不是此次实验的重点因此不多谈
+
+	\subsection{正则表达式的表示范围}
+
+	已支持的正则表达式：\\
+	普通匹配，\verb^|^运算符，\verb|*|运算符，\verb|+|运算符，\verb|?|运算符，字符类(中括号表示)，\verb|raw string|(引号表示)
+
+	未支持的正则表达式，主要为所有上下文有关的正则表达式符号：\\
+	\verb|^|行首符，\verb|$|行末府，\verb|/|后缀符
+
+	\subsection{正则表达式的表示范围}
+	因为jvm在编译时限制单个源文件最大为64KB，超出会编译失败，而此次实验目前在使用静态声明的数组存储DFA的信息，因而DFA的大小也就是规则部分的RE的数量和匹配能力直接影响了YyLex.java文件的大小，所以在编写Lex源规则文件的时候需要加入此方面的考虑。
+
+	\subsection{支持的字符集}
+	可以识别ASCII表中的所有可见字符，不可见字符中的\verb|\0|,\verb|\b|和\verb|\v|暂未考虑\\
+	其中\verb|\b|被作为程序中的EPSILON符号使用，为了简化考虑而没有将其本身加入支持字符集
+
+	\subsection{用户对换行符的了解}
+	因为生成的分析器代码不会对读入字符有任何的额外处理，因此用户可能在跨平台的换行符识别规则上碰上困难。\\
+	Windows平台的换行符号为\verb|\r\n|，类Unix平台上为\verb|\n|，我假设用户如果要识别换行，能准确地写出符合自己使用的平台的规则
+
+	\section{FA相关描述}
+	我觉得代码描述得最清楚，包括其职责和能力
+
+	\section{重要的数据结构描述}
+
+	\subsection{Tuple类}
+	自行实现了元组，构造成列表由\verb|NFANode|使用，代表从其开始的所有转换条件和转换目标
+
+	\subsection{Node类}
+	通过FA保存\verb|Node|，\verb|Node|保存转换条件和转换目标这种间接使用来避开直接保存\verb|<source, condition, destination>|三元组这种开销很大的做法。(虽然最后实现出来好像效率也不怎么高)
+
+	\subsection{FA类}
+	\verb|NFA|和\verb|DFA|的字段如下，除了\verb|initial|，\verb|accepts|，\verb|nodes|，\verb|actIdxMap|这四个必要的字段，\verb|nodeMap|作为信息冗余，通过牺牲空间来换取时间
+
+	\section{核心算法}
+	\subsection{正则表达式后缀化}
+	采用标准的中缀转后缀算法(在此前需要加入二元的连接符号)，定义运算符优先级，使用栈这种数据结构来辅助完成正则表达式的后缀化。\\
+	注意转义属于特殊情况，不能单独作为运算符或者运算数看待，不受后缀化影响，是后缀表达式中的特例，遇上转义符号代表其后的一个符号要转义。
+
+	\subsection{THOMPSON算法构造NFA}
+	RE后缀化之后，按顺序读取表达式，遇上普通字符则构造一个\verb|NFA|，表示只有一次转换。\\
+	(nfa-construction.png)\\
+	再使用栈保存已构造的\verb|NFA|，遇上运算符推出栈顶的一个或者两个NFA进行运算。\\
+	(nfa-operate.png)\\
+	遍历RE后即得所求NFA
+
+	\subsection{DFA状态最小化}
+	构造状态束集合，最初的元素有：所有非终态集合，根据执行动作划分的不同终态集合。\\
+	注意因为此DFA负责代表所有的规则，因此执行不同动作的终态需要区分开。\\
+	不断探测查看是否可以分裂当前状态束集合，直到不能再分裂为止。
+
+	\section{用例和运行情况}
+	\subsection{用例1}
+	lex源规则如下
+
+	\begin{verbatim}
+	"int" 	yy_out.print("INT"); 
+	"char" 	yy_out.print("CHAR");
+	{W}+	yy_out.print(" ");
+	\r?\n	yy_out.print("\n");
+	{L}({L}|{D})*		{ 
+			yy_out.print("IDENTIFIER: " + yytext());
+			//indent test
+			}
+	\end{verbatim}
+
+	输入如下：
+	\begin{verbatim}
+	int  char  
+	iden char ccc
+	  int  
+	\end{verbatim}
+
+	输出：
+	\begin{verbatim}
+	INT CHAR 
+	IDENTIFIER: iden CHAR IDENTIFIER: ccc
+	  INT
+	\end{verbatim}
+
+	\subsection{用例2}
+
+	lex源规则如下
+
+	\begin{verbatim}
+	D			[0-9]
+	L			[a-zA-Z_]
+	H			[a-fA-F0-9]
+	E			([Ee][+-]?{D}+)
+	P           ([Pp][+-]?{D}+)
+	W 			[ \t]
+	FS			(f|F|l|L)
+	%%
+	"int" 	yy_out.print("INT"); 
+	"char" 	yy_out.print("CHAR");
+	"public" yy_out.print("PUBLIC");
+	"void" yy_out.print("VOID");
+	"return" yy_out.print("RETURN");
+	
+	"+="			{ 
+			yy_out.print("ADD_ASSIGN"); 
+		}
+	"-="			{ 
+			yy_out.print("SUB_ASSIGN"); 
+		}
+	"*="			{ 
+			yy_out.print("MUL_ASSIGN"); 
+		}
+	"/="			{ 
+			yy_out.print("DIV_ASSIGN"); 
+		}
+	"++"			{ 
+			yy_out.print("INC_OP"); 
+		}
+	"--"			{ 
+			yy_out.print("DEC_OP"); 
+		}
+	"->"			{ 
+			yy_out.print("PTR_OP"); 
+		}
+	"&&"			{ 
+			yy_out.print("AND_OP"); 
+		}
+	"||"			{ 
+			yy_out.print("OR_OP"); 
+		}
+	"<="			{ 
+			yy_out.print("LE_OP"); 
+		}
+	">="			{ 
+			yy_out.print("GE_OP"); 
+		}
+	"=="			{ 
+			yy_out.print("EQ_OP"); 
+		}
+	"!="			{ 
+			yy_out.print("NE_OP"); 
+		}
+	";"			{ 
+		yy_out.print(";"); 
+		}
+	"{"		{ 
+			yy_out.print("{"); 
+		}
+	"}"		{ 
+			yy_out.print("}"); 
+		}
+	","			{ 
+			yy_out.print(","); 
+		}
+	":"			{ 
+			yy_out.print(":"); 
+		}
+	"="			{ 
+			yy_out.print("="); 
+		}
+	"("			{ 
+			yy_out.print("("); 
+		}
+	")"			{ 
+			yy_out.print(")"); 
+		}
+	"["		{ 
+			yy_out.print("["); 
+		}
+	"]"		{ 
+			yy_out.print("]"); 
+		}
+	"."			{ 
+			yy_out.print("."); 
+		}
+	"-"			{ 
+			yy_out.print("-"); 
+		}
+	"+"			{ 
+			yy_out.print("+"); 
+		}
+	"*"			{ 
+			yy_out.print("*"); 
+		}
+	"/"			{ 
+			yy_out.print("/"); 
+		}
+	"<"			{ 
+		yy_out.print("<"); 
+		}
+	">"			{ 
+			yy_out.print(">"); 
+		}
+	{W}+	yy_out.print(" ");
+	\r?\n	yy_out.print("\n");
+	{L}({L}|{D})*		{ 
+			yy_out.print("IDENTIFIER: " + yytext());
+			//indent test
+		}
+	[1-9]{D}*{FS}?		{ 
+			yy_out.print("DECIMAL_INTEGER: " + yytext()); 
+	%%
+	\end{verbatim}
+
+	输入如下：
+	\begin{verbatim}
+	public int main() {
+		int a = 1;
+		int b = 2:
+		a += b;
+		retrun a;
+	}  
+	\end{verbatim}
+
+	输出：
+	\begin{verbatim}
+	PUBLIC INT IDENTIFIER: main() {
+		INT IDENTIFIER: a = DECIMAL_INTEGER: 1;
+		INT IDENTIFIER: b = DECIMAL_INTEGER: 2:
+		IDENTIFIER: a ADD_ASSIGN IDENTIFIER: b;
+		IDENTIFIER: retrun IDENTIFIER: a;
+	}
+	\end{verbatim}
+
+	\section{出现问题及相关解决方案}
+	\begin{itemize}
+		\item 正则表达式处理和DFA的优化需要十分关注细节
+		\item FA中要找bug十分困难
+	\end{itemize}
+
+	解决都是靠花时间
+
+	\section{个人感受}
+	至少通过此项目我能更深刻地理解Lex中那些算法和FA的相关概念，自己编码也会涉及到许多关于具体实现上细节的考虑。\\
+	除此之外，代码生成器及分析代码的框架设计也是一个很值得研究部分。可惜时间有限，不能做到进一步的优化和精细化。
+
+	
+\end{document}
