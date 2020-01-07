@@ -1,7 +1,7 @@
 # NCompiler
 
-Programming assignment of class Compilers Principles.  
-May implement lex and yacc only.
+Try to implement a compiler while going deep into class *Compiler princples*.  
+The progress is not promised.
 
 ## Target
 
