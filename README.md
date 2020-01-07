@@ -1,6 +1,6 @@
 # NCompiler
 
-Try to implement a compiler while going deep into class *Compiler princples*.  
+Try to implement a compiler while going deep into class *Compiling Techniques*.  
 The progress is not promised.
 
 ## Target
