@@ -1,6 +1,6 @@
 # Yacc: 另一个编译器的编译器
 
-[原文来源](http://dinosaur.compilertools.net/yacc/index.html)
+Document source: [Yacc Manual](http://dinosaur.compilertools.net/yacc/index.html)
 
 ## 摘要
 
