@@ -4,3 +4,4 @@
 /**/*.log
 /**/*.synctex.gz
 njlex/target/
+njyacc/target/
